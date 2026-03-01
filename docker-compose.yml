@@ -1,0 +1,27 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    ports:
+      - "4000:4000"
+    environment:
+      - BIM_SERVICE_URL=http://bim-service:8000
+      - PORT=4000
+    depends_on:
+      - bim-service
+
+  bim-service:
+    build: ./bim-service
+    ports:
+      - "8000:8000"
+    environment:
+      - ARCHICAD_HOST=host.docker.internal
+      - ARCHICAD_PORT=19723
