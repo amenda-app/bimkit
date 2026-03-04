@@ -6,3 +6,4 @@ httpx==0.28.*
 reportlab==4.2.*
 ifcopenshell
 python-multipart
+pyyaml

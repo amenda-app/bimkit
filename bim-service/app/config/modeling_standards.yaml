@@ -1,0 +1,42 @@
+phase_mapping:
+  "Vorplanung": 2
+  "Entwurfsplanung": 3
+  "Genehmigungsplanung": 4
+  "Ausführungsplanung": 5
+
+phases:
+  2:  # LPH 2 – Vorplanung
+    label: "LPH 2 – Vorplanung"
+    room_properties:
+      required: ["name", "area"]
+      optional: ["usage_type", "height"]
+    element_types_required: []
+    element_properties:
+      required: []
+
+  3:  # LPH 3 – Entwurfsplanung
+    label: "LPH 3 – Entwurfsplanung"
+    room_properties:
+      required: ["name", "number", "area", "height", "usage_type"]
+      optional: ["finish_floor", "finish_wall", "finish_ceiling"]
+    element_types_required: ["Wall", "Slab", "Roof"]
+    element_properties:
+      required: []
+
+  4:  # LPH 4 – Genehmigungsplanung
+    label: "LPH 4 – Genehmigungsplanung"
+    room_properties:
+      required: ["name", "number", "area", "height", "usage_type"]
+      optional: ["finish_floor", "finish_wall", "finish_ceiling"]
+    element_types_required: ["Wall", "Slab", "Door", "Window", "Roof"]
+    element_properties:
+      required: ["story"]
+
+  5:  # LPH 5 – Ausführungsplanung
+    label: "LPH 5 – Ausführungsplanung"
+    room_properties:
+      required: ["name", "number", "area", "height", "usage_type",
+                 "finish_floor", "finish_wall", "finish_ceiling"]
+    element_types_required: ["Wall", "Slab", "Door", "Window", "Column", "Roof"]
+    element_properties:
+      required: ["story", "layer", "classification"]
