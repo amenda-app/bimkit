@@ -14,6 +14,7 @@ from app.models import (
     ConnectRequest, ConnectResponse, ExcelRequest, PdfRequest,
     ProjectRequest, SnapshotRequest, CompareRequest,
     SchedulerConfig,
+    ProjectReportRequest, ProjectReportResponse,
 )
 from app.services.archicad import create_client, ArchiCADClient, MockArchiCADClient
 from app.services.project_store import store
@@ -31,6 +32,7 @@ from app.services.diff_engine import create_snapshot, get_snapshots, compute_dif
 from app.services.snapshot_store import snapshot_store
 from app.services.snapshot_scheduler import scheduler
 from app.services.lph_progress import compute_lph_progress
+from app.services.ai_assistant import generate_project_report, extract_sections
 
 logger = logging.getLogger(__name__)
 
@@ -367,6 +369,64 @@ async def alerts(project_id: str):
         raise HTTPException(status_code=404, detail=f"Projekt '{project_id}' nicht gefunden")
     alert_list = detect_alerts(project_id)
     return {"alerts": [a.model_dump() for a in alert_list]}
+
+
+# --- AI Report ---
+
+@app.post("/bim/ai/project-report/{project_id}", response_model=ProjectReportResponse)
+async def ai_project_report(project_id: str, req: ProjectReportRequest | None = None):
+    """Generate an AI-powered narrative project report."""
+    project = store.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Projekt '{project_id}' nicht gefunden")
+
+    # Collect all project data
+    rooms = store.get_rooms(project_id)
+    areas = store.get_areas(project_id)
+    materials = store.get_materials(project_id)
+    cost = store.get_cost_estimate(project_id)
+
+    # Run quality checks (reuse existing logic)
+    extra_data: dict = {}
+    if isinstance(_client, (ArchiCADClient, MockArchiCADClient)):
+        try:
+            extra_data = await collect_quality_data(_client)
+        except Exception as e:
+            logger.warning("Failed to collect quality data for AI report: %s", e)
+
+    quality = run_quality_checks(project_id, rooms, **extra_data)
+    lph = resolve_lph_for_status(project.status)
+    if lph is not None:
+        requirement = get_requirement(lph)
+        if requirement is not None:
+            compliance = check_standards_compliance(
+                project.status, requirement, rooms, extra_data.get("elements", []))
+            quality.phase_compliance = compliance
+
+    # Snapshots (optional)
+    snapshots = get_snapshots(project_id)
+    changes = None
+    if len(snapshots) >= 2:
+        changes = compute_diff(snapshots[-2].id, snapshots[-1].id)
+
+    model_override = req.model if req else None
+
+    try:
+        report_md, model_used = await generate_project_report(
+            project, rooms, areas, materials, quality, cost,
+            snapshots or None, changes, model_override,
+        )
+    except EnvironmentError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    sections = extract_sections(report_md)
+
+    return ProjectReportResponse(
+        project_id=project_id,
+        report=report_md,
+        model_used=model_used,
+        sections=sections,
+    )
 
 
 # --- Report Generation ---

@@ -272,3 +272,16 @@ class LPHProgressResponse(BaseModel):
     current_phase: str  # project status
     phases: list[LPHPhaseProgress]
     next_steps: list[str]  # German-language "next steps" to improve
+
+
+# --- AI Report Models ---
+
+class ProjectReportRequest(BaseModel):
+    model: str | None = None  # override default model
+
+
+class ProjectReportResponse(BaseModel):
+    project_id: str
+    report: str  # markdown
+    model_used: str
+    sections: list[str]
