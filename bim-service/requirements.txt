@@ -3,3 +3,6 @@ uvicorn==0.34.*
 openpyxl==3.1.*
 pydantic==2.*
 httpx==0.28.*
+reportlab==4.2.*
+ifcopenshell
+python-multipart

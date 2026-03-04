@@ -5,7 +5,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from app.models import Room, Area, Material, Project
+from app.models import Room, Area, Material, Project, QuantityItem
 
 
 # DCAB brand colors
@@ -184,6 +184,64 @@ def generate_materialien(project: Project, materials: list[Material]) -> io.Byte
         row = _write_row(ws, row, [
             mat.name, mat.category, mat.quantity, mat.unit, mat.manufacturer, mat.product,
         ], number_cols)
+
+    _auto_column_width(ws)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+EUR_FORMAT = '#,##0.00 "EUR"'
+
+
+def generate_mengen(project: Project, quantities: list[QuantityItem]) -> io.BytesIO:
+    """Generate Mengenermittlung (quantity takeoff) Excel report."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Mengenermittlung"
+
+    ws.cell(row=1, column=1, value=f"Mengenermittlung - {project.name}").font = TITLE_FONT
+    ws.cell(row=2, column=1, value=project.address).font = SUBTITLE_FONT
+
+    headers = ["Pos.", "Gewerk", "Kategorie", "Beschreibung", "Menge", "Einheit", "EP (EUR)", "GP (EUR)"]
+    row = _write_header(ws, 4, headers)
+
+    number_cols = {5, 7, 8}
+    current_trade = None
+    trade_total = 0.0
+    pos = 0
+
+    sorted_items = sorted(quantities, key=lambda q: (q.trade, q.category, q.element_type))
+
+    for item in sorted_items:
+        if current_trade is not None and item.trade != current_trade:
+            row = _write_sum_row(ws, row, f"Summe {current_trade}", len(headers), 8, trade_total)
+            ws.cell(row=row - 1, column=8).number_format = EUR_FORMAT
+            trade_total = 0.0
+            row += 1
+
+        current_trade = item.trade
+        trade_total += item.total_price
+        pos += 1
+
+        row = _write_row(ws, row, [
+            pos, item.trade, item.category, f"{item.element_type} {item.description}".strip(),
+            item.quantity, item.unit, item.unit_price, item.total_price,
+        ], number_cols)
+
+        ws.cell(row=row - 1, column=7).number_format = EUR_FORMAT
+        ws.cell(row=row - 1, column=8).number_format = EUR_FORMAT
+
+    if current_trade is not None:
+        row = _write_sum_row(ws, row, f"Summe {current_trade}", len(headers), 8, trade_total)
+        ws.cell(row=row - 1, column=8).number_format = EUR_FORMAT
+
+    row += 1
+    grand_total = sum(item.total_price for item in quantities)
+    row = _write_sum_row(ws, row, "GESAMTSUMME", len(headers), 8, grand_total)
+    ws.cell(row=row - 1, column=8).number_format = EUR_FORMAT
 
     _auto_column_width(ws)
 

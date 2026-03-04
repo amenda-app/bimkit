@@ -1,6 +1,6 @@
 """Realistic mock data for BIM Report Studio - 3 projects with DIN 277 conformant data."""
 
-from app.models import Project, Room, Area, Material
+from app.models import Project, Room, Area, Material, QuantityItem, CostGroup, CostEstimate
 
 
 # --- Projects ---
@@ -466,3 +466,161 @@ def get_projects() -> list[Project]:
 
 def get_project(project_id: str) -> Project | None:
     return PROJECTS.get(project_id)
+
+
+# --- V2: Quantities & Cost Estimation ---
+
+# Material name → (trade/Gewerk, unit price EUR)
+UNIT_PRICES: dict[str, tuple[str, float]] = {
+    "Sichtbeton C30/37": ("Rohbau", 45.0),
+    "Gipskartonplatte 12.5mm": ("Trockenbau", 28.0),
+    "Gipskartonwand": ("Trockenbau", 32.0),
+    "Gipskartondecke": ("Trockenbau", 35.0),
+    "Akustikdecke": ("Trockenbau", 55.0),
+    "Akustikpaneel Wand": ("Trockenbau", 65.0),
+    "Feuchtraumdecke": ("Trockenbau", 48.0),
+    "Naturstein Jura Kalkstein": ("Bodenbelag", 120.0),
+    "Parkett Eiche geölt": ("Bodenbelag", 85.0),
+    "Parkett Eiche": ("Bodenbelag", 82.0),
+    "Estrich geschliffen": ("Estrich", 38.0),
+    "Fliesen 30x60": ("Fliesen", 65.0),
+    "Fliesen 60x60": ("Fliesen", 68.0),
+    "Fliesen 30x30": ("Fliesen", 58.0),
+    "Linoleum": ("Bodenbelag", 42.0),
+    "Teppichboden": ("Bodenbelag", 35.0),
+    "WPC Terrassendielen": ("Bodenbelag", 95.0),
+    "Doppelboden": ("Bodenbelag", 110.0),
+    "Beschichtung Tiefgarage": ("Beschichtung", 32.0),
+    "Brandschutztür T30": ("Türen", 850.0),
+    "Innentür Holz": ("Türen", 420.0),
+    "Innentür CPL": ("Türen", 380.0),
+    "Innentür HPL": ("Türen", 450.0),
+    "Wohnungseingangstür T30": ("Türen", 1200.0),
+    "Festverglasung": ("Fenster", 280.0),
+    "Sonnenschutzglas": ("Fenster", 320.0),
+    "Kunststofffenster 3-fach": ("Fenster", 350.0),
+    "Holz-Alu-Fenster": ("Fenster", 420.0),
+    "Sonnenschutz Raffstore": ("Sonnenschutz", 180.0),
+    "Kalksandstein 17.5cm": ("Mauerwerk", 48.0),
+    "Porenbeton 24cm": ("Mauerwerk", 42.0),
+    "WDVS EPS 160mm": ("Fassade", 85.0),
+}
+
+# Per-project structural extras (Rohbau items not in material list)
+ROHBAU_EXTRAS: dict[str, list[tuple[str, str, float, str, float]]] = {
+    # (description, category, quantity, unit, unit_price)
+    "museum": [
+        ("Bodenplatte C25/30 d=30cm", "Fundament", 1620.0, "m²", 95.0),
+        ("Stahlbetonstützen", "Tragwerk", 48.0, "Stk", 1200.0),
+        ("Stahlbetondecke d=25cm", "Decke", 3230.0, "m²", 85.0),
+        ("Flachdach Aufbau", "Dach", 1620.0, "m²", 120.0),
+    ],
+    "wohnhaus": [
+        ("Bodenplatte C25/30 d=25cm", "Fundament", 1490.0, "m²", 90.0),
+        ("Stahlbetondecke d=20cm", "Decke", 7440.0, "m²", 78.0),
+        ("Stahlbetontreppe", "Tragwerk", 6.0, "Stk", 3500.0),
+        ("Steildach Aufbau", "Dach", 1490.0, "m²", 145.0),
+    ],
+    "schule": [
+        ("Bodenplatte C25/30 d=25cm", "Fundament", 1600.0, "m²", 88.0),
+        ("Stahlbetondecke d=22cm", "Decke", 1600.0, "m²", 80.0),
+        ("Stahlbetontreppe", "Tragwerk", 2.0, "Stk", 3200.0),
+        ("Flachdach Aufbau", "Dach", 1600.0, "m²", 115.0),
+    ],
+}
+
+# Map (trade, category) → DIN 276 Kostengruppe
+DIN_276_MAPPING: dict[str, tuple[str, str]] = {
+    "Rohbau": ("300", "Bauwerk - Baukonstruktionen"),
+    "Mauerwerk": ("330", "Außenwände"),
+    "Fassade": ("336", "Außenwandbekleidung außen"),
+    "Trockenbau": ("340", "Innenwände"),
+    "Estrich": ("352", "Deckenbeläge"),
+    "Bodenbelag": ("352", "Deckenbeläge"),
+    "Fliesen": ("352", "Deckenbeläge"),
+    "Beschichtung": ("352", "Deckenbeläge"),
+    "Türen": ("344", "Innentüren und -fenster"),
+    "Fenster": ("334", "Außentüren und -fenster"),
+    "Sonnenschutz": ("338", "Sonnenschutz"),
+}
+
+
+def get_quantities(project_id: str) -> list[QuantityItem]:
+    """Generate quantity items from materials + structural extras."""
+    materials = get_materials(project_id)
+    items: list[QuantityItem] = []
+
+    for mat in materials:
+        trade, price = UNIT_PRICES.get(mat.name, ("Sonstiges", 50.0))
+        items.append(QuantityItem(
+            trade=trade,
+            category=mat.category,
+            element_type=mat.name,
+            description=f"{mat.manufacturer} {mat.product}".strip("— "),
+            quantity=mat.quantity,
+            unit=mat.unit,
+            unit_price=price,
+            total_price=round(mat.quantity * price, 2),
+        ))
+
+    for desc, cat, qty, unit, price in ROHBAU_EXTRAS.get(project_id, []):
+        items.append(QuantityItem(
+            trade="Rohbau",
+            category=cat,
+            element_type=desc,
+            description="",
+            quantity=qty,
+            unit=unit,
+            unit_price=price,
+            total_price=round(qty * price, 2),
+        ))
+
+    return items
+
+
+def get_cost_estimate(project_id: str) -> CostEstimate:
+    """Generate DIN 276 cost estimate from quantities."""
+    project = get_project(project_id)
+    if not project:
+        return CostEstimate(total_cost=0, cost_per_sqm=0, cost_groups=[])
+
+    quantities = get_quantities(project_id)
+
+    # Group by KG
+    kg_data: dict[str, list[QuantityItem]] = {}
+    for item in quantities:
+        kg_num, _ = DIN_276_MAPPING.get(item.trade, ("390", "Sonstige Maßnahmen"))
+        kg_data.setdefault(kg_num, []).append(item)
+
+    # Build cost groups
+    cost_groups: list[CostGroup] = []
+    kg_names = {
+        "300": "Bauwerk - Baukonstruktionen",
+        "330": "Außenwände",
+        "334": "Außentüren und -fenster",
+        "336": "Außenwandbekleidung außen",
+        "338": "Sonnenschutz",
+        "340": "Innenwände",
+        "344": "Innentüren und -fenster",
+        "352": "Deckenbeläge",
+        "390": "Sonstige Maßnahmen",
+    }
+
+    for kg_num in sorted(kg_data.keys()):
+        items = kg_data[kg_num]
+        subtotal = sum(i.total_price for i in items)
+        level = 1 if kg_num == "300" else 2
+        cost_groups.append(CostGroup(
+            kg_number=kg_num,
+            name=kg_names.get(kg_num, f"KG {kg_num}"),
+            level=level,
+            subtotal=round(subtotal, 2),
+            items=items,
+        ))
+
+    total = sum(cg.subtotal for cg in cost_groups)
+    return CostEstimate(
+        total_cost=round(total, 2),
+        cost_per_sqm=round(total / project.total_area, 2) if project.total_area > 0 else 0,
+        cost_groups=cost_groups,
+    )
