@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 
@@ -146,3 +148,34 @@ class CompareRequest(BaseModel):
     project_id: str
     snapshot_a: str
     snapshot_b: str
+
+
+# --- Monitoring Models ---
+
+class SnapshotTrendPoint(BaseModel):
+    timestamp: str
+    label: str
+    room_count: int
+    material_count: int
+    total_area: float
+
+
+class MonitoringAlert(BaseModel):
+    severity: str  # "info" | "warning" | "critical"
+    message: str
+    timestamp: str
+    snapshot_id: str
+    details: dict[str, str]
+
+
+class SchedulerStatus(BaseModel):
+    active: bool
+    interval_minutes: int
+    last_run: str | None
+    next_run: str | None
+    snapshot_count: int
+
+
+class SchedulerConfig(BaseModel):
+    interval_minutes: int = 60
+    enabled: bool = True

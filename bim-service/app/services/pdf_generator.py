@@ -1,4 +1,5 @@
 """PDF report generation for BIM data using ReportLab."""
+from __future__ import annotations
 
 import io
 from datetime import datetime

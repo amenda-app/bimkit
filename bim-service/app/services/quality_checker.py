@@ -1,4 +1,5 @@
 """Quality checks for BIM model data."""
+from __future__ import annotations
 
 from app.models import Room, QualityIssue, QualityReport
 

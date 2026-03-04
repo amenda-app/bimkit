@@ -1,4 +1,5 @@
 """Parse IFC files into Room, Material, and Project models using ifcopenshell."""
+from __future__ import annotations
 
 import uuid
 from collections import defaultdict

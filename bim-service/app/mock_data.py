@@ -1,4 +1,5 @@
 """Realistic mock data for BIM Report Studio - 3 projects with DIN 277 conformant data."""
+from __future__ import annotations
 
 from app.models import Project, Room, Area, Material, QuantityItem, CostGroup, CostEstimate
 

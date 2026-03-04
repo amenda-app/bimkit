@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  Building2, LayoutGrid, Box, Wifi, WifiOff, Loader2,
+  Building2, LayoutGrid, Box, Loader2,
   Ruler, Euro, ShieldCheck, GitCompare, FileDown, BarChart3,
 } from "lucide-react";
 import type {
@@ -14,7 +14,7 @@ import {
   getQuantities, getQualityReport, getCostEstimate, getSnapshots,
 } from "@/lib/api";
 import { KPICard } from "./KPICard";
-import { ProjectSelector } from "./ProjectSelector";
+import { LiveConnectionCard } from "./LiveConnectionCard";
 import { AreaByFloorChart } from "./AreaChart";
 import { MaterialDistributionChart } from "./MaterialChart";
 import { RoomTable } from "./RoomTable";
@@ -22,9 +22,8 @@ import { ReportDownload } from "./ReportDownload";
 import { QuantityTable } from "./QuantityTable";
 import { QualityReport } from "./QualityReport";
 import { CostBreakdown } from "./CostBreakdown";
-import { ChangeLog } from "./ChangeLog";
+import { MonitoringDashboard } from "./MonitoringDashboard";
 import { DIN277Summary } from "./DIN277Summary";
-import { IFCUpload } from "./IFCUpload";
 
 type Tab = "overview" | "rooms" | "quantities" | "costs" | "quality" | "changes" | "reports";
 
@@ -34,7 +33,7 @@ const TABS: { id: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { id: "quantities", label: "Mengen", icon: Ruler },
   { id: "costs", label: "Kosten", icon: Euro },
   { id: "quality", label: "Qualität", icon: ShieldCheck },
-  { id: "changes", label: "Änderungen", icon: GitCompare },
+  { id: "changes", label: "Monitoring", icon: GitCompare },
   { id: "reports", label: "Berichte", icon: FileDown },
 ];
 
@@ -128,7 +127,6 @@ export function Dashboard() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="bg-white rounded-lg shadow p-8 max-w-md text-center">
-          <WifiOff className="w-10 h-10 text-red-400 mx-auto mb-4" />
           <p className="text-dcab-navy font-semibold">Verbindungsfehler</p>
           <p className="text-sm text-dcab-gray mt-2">{error}</p>
           <button
@@ -146,12 +144,12 @@ export function Dashboard() {
     <div className="space-y-6">
       {/* Connection + KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KPICard
-          title="Verbindung"
-          value={health?.mode === "mock" ? "Mock-Modus" : "Live"}
-          subtitle={health?.mode === "mock" ? "ArchiCAD nicht verbunden" : "ArchiCAD verbunden"}
-          icon={health?.mode === "mock" ? WifiOff : Wifi}
-          color={health?.mode === "mock" ? "accent" : "green"}
+        <LiveConnectionCard
+          health={health}
+          projects={projects}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onProjectAdded={handleProjectAdded}
         />
         <KPICard
           title="Räume"
@@ -174,18 +172,6 @@ export function Dashboard() {
           icon={Box}
           color="accent"
         />
-      </div>
-
-      {/* IFC Upload */}
-      <div>
-        <h2 className="text-sm font-semibold text-dcab-navy mb-3">IFC-Datei importieren</h2>
-        <IFCUpload onProjectAdded={handleProjectAdded} />
-      </div>
-
-      {/* Project Selector */}
-      <div>
-        <h2 className="text-sm font-semibold text-dcab-navy mb-3">Projekt auswählen</h2>
-        <ProjectSelector projects={projects} selected={selectedId} onSelect={setSelectedId} />
       </div>
 
       {/* Tabs */}
@@ -245,7 +231,7 @@ export function Dashboard() {
           )}
 
           {activeTab === "changes" && selectedId && (
-            <ChangeLog
+            <MonitoringDashboard
               projectId={selectedId}
               snapshots={snapshots}
               onSnapshotsChange={setSnapshots}

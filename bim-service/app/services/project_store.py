@@ -1,4 +1,5 @@
 """Unified in-memory project store for all data sources (mock, IFC, ArchiCAD)."""
+from __future__ import annotations
 
 from app.models import (
     Project, Room, Area, Material, QuantityItem, CostGroup, CostEstimate,
@@ -14,16 +15,6 @@ class ProjectStore:
         self._rooms: dict[str, list[Room]] = {}
         self._materials: dict[str, list[Material]] = {}
         self._sources: dict[str, str] = {}
-        self._load_mock_data()
-
-    def _load_mock_data(self) -> None:
-        for project in mock_data.get_projects():
-            pid = project.id
-            project.source = "mock"
-            self._projects[pid] = project
-            self._rooms[pid] = mock_data.get_rooms(pid)
-            self._materials[pid] = mock_data.get_materials(pid)
-            self._sources[pid] = "mock"
 
     def add_project(
         self,
@@ -42,8 +33,6 @@ class ProjectStore:
     def remove_project(self, project_id: str) -> bool:
         if project_id not in self._projects:
             return False
-        if self._sources.get(project_id) == "mock":
-            return False  # don't allow deleting mock projects
         del self._projects[project_id]
         self._rooms.pop(project_id, None)
         self._materials.pop(project_id, None)

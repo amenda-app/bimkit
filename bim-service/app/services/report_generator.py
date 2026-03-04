@@ -1,4 +1,5 @@
 """Excel report generation for BIM data."""
+from __future__ import annotations
 
 import io
 from openpyxl import Workbook

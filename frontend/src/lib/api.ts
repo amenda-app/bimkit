@@ -1,6 +1,7 @@
 import type {
   Project, Room, Area, Material, HealthResponse,
   QuantityItem, QualityReportData, CostEstimate, Snapshot, ChangeEntry,
+  SnapshotTrendPoint, MonitoringAlert, SchedulerStatus, SchedulerConfig,
 } from "./types";
 
 const BIM_URL = process.env.NEXT_PUBLIC_BIM_SERVICE_URL || "http://localhost:8000";
@@ -119,6 +120,32 @@ export async function uploadIFC(file: File): Promise<{ project: Project; rooms_c
 export async function deleteProject(projectId: string): Promise<void> {
   const res = await fetch(`${BIM_URL}/bim/projects/${projectId}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Projekt konnte nicht gelöscht werden");
+}
+
+export async function deleteSnapshot(projectId: string, snapshotId: string): Promise<void> {
+  const res = await fetch(`${BIM_URL}/bim/snapshots/${projectId}/${snapshotId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Snapshot konnte nicht gelöscht werden");
+}
+
+export async function getMonitoringStatus(): Promise<SchedulerStatus> {
+  return fetchJSON(`${BIM_URL}/bim/monitoring/status`);
+}
+
+export async function configureMonitoring(config: SchedulerConfig): Promise<SchedulerStatus> {
+  return fetchJSON(`${BIM_URL}/bim/monitoring/configure`, {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export async function getTrends(projectId: string): Promise<SnapshotTrendPoint[]> {
+  const data = await fetchJSON<{ trends: SnapshotTrendPoint[] }>(`${BIM_URL}/bim/trends/${projectId}`);
+  return data.trends;
+}
+
+export async function getAlerts(projectId: string): Promise<MonitoringAlert[]> {
+  const data = await fetchJSON<{ alerts: MonitoringAlert[] }>(`${BIM_URL}/bim/alerts/${projectId}`);
+  return data.alerts;
 }
 
 export async function downloadPdf(projectId: string, reportType: string): Promise<void> {

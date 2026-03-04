@@ -107,3 +107,34 @@ export interface CostEstimate {
   cost_per_sqm: number;
   cost_groups: CostGroup[];
 }
+
+// Monitoring types
+
+export interface SnapshotTrendPoint {
+  timestamp: string;
+  label: string;
+  room_count: number;
+  material_count: number;
+  total_area: number;
+}
+
+export interface MonitoringAlert {
+  severity: "info" | "warning" | "critical";
+  message: string;
+  timestamp: string;
+  snapshot_id: string;
+  details: Record<string, string>;
+}
+
+export interface SchedulerStatus {
+  active: boolean;
+  interval_minutes: number;
+  last_run: string | null;
+  next_run: string | null;
+  snapshot_count: number;
+}
+
+export interface SchedulerConfig {
+  interval_minutes: number;
+  enabled: boolean;
+}

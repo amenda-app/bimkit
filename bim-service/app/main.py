@@ -1,4 +1,5 @@
 """BIM Report Studio - FastAPI Service."""
+from __future__ import annotations
 
 import os
 import uuid
@@ -12,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from app.models import (
     ConnectRequest, ConnectResponse, ExcelRequest, PdfRequest,
     ProjectRequest, SnapshotRequest, CompareRequest,
+    SchedulerConfig,
 )
 from app.services.archicad import create_client, ArchiCADClient, MockArchiCADClient
 from app.services.project_store import store
@@ -22,13 +24,15 @@ from app.services.pdf_generator import (
     generate_pdf_raumbuch, generate_pdf_flaechen, generate_pdf_materialien, generate_pdf_mengen,
 )
 from app.services.quality_checker import run_quality_checks
-from app.services.diff_engine import create_snapshot, get_snapshots, compute_diff
+from app.services.diff_engine import create_snapshot, get_snapshots, compute_diff, delete_snapshot, detect_alerts
+from app.services.snapshot_store import snapshot_store
+from app.services.snapshot_scheduler import scheduler
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="DCAB BIM Report Studio",
-    version="0.3.0",
+    version="0.4.0",
     description="BIM data extraction and report generation service",
 )
 
@@ -44,6 +48,22 @@ app.add_middleware(
 _client: ArchiCADClient | MockArchiCADClient = MockArchiCADClient()
 
 
+async def _refresh_archicad_data() -> None:
+    """Refresh project data from ArchiCAD into the store."""
+    if not isinstance(_client, ArchiCADClient):
+        return
+    try:
+        projects = await _client.get_projects()
+        for project in projects:
+            rooms = await _client.get_rooms(project.id)
+            materials = await _client.get_materials(project.id)
+            project.total_area = round(sum(r.area for r in rooms), 2)
+            project.floors = len(set(r.floor for r in rooms))
+            store.add_project(project, rooms, materials, "archicad")
+    except Exception as e:
+        logger.warning("Failed to refresh ArchiCAD data: %s", e)
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "bim-service", "mode": "mock" if isinstance(_client, MockArchiCADClient) else "live"}
@@ -57,17 +77,12 @@ async def connect(req: ConnectRequest):
 
     # If real ArchiCAD connected, pull data into store
     if not is_mock and isinstance(_client, ArchiCADClient):
-        try:
-            projects = await _client.get_projects()
-            for project in projects:
-                rooms = await _client.get_rooms(project.id)
-                materials = await _client.get_materials(project.id)
-                # Update total_area from actual rooms
-                project.total_area = round(sum(r.area for r in rooms), 2)
-                project.floors = len(set(r.floor for r in rooms))
-                store.add_project(project, rooms, materials, "archicad")
-        except Exception as e:
-            logger.warning("Failed to pull ArchiCAD data into store: %s", e)
+        await _refresh_archicad_data()
+
+        # Start auto-snapshot scheduler
+        scheduler.set_refresh_callback(_refresh_archicad_data)
+        scheduler.set_project_id("archicad-live")
+        scheduler.start(interval_minutes=60)
 
     return ConnectResponse(
         connected=True,
@@ -123,12 +138,12 @@ async def upload_ifc(file: UploadFile = File(...)):
 
 @app.delete("/bim/projects/{project_id}")
 async def delete_project(project_id: str):
-    """Delete an uploaded or ArchiCAD project (not mock)."""
+    """Delete a project."""
     removed = store.remove_project(project_id)
     if not removed:
         raise HTTPException(
             status_code=400,
-            detail="Projekt nicht gefunden oder ist ein Demo-Projekt (kann nicht gelöscht werden)",
+            detail="Projekt nicht gefunden",
         )
     return {"message": f"Projekt '{project_id}' gelöscht", "deleted": True}
 
@@ -226,9 +241,18 @@ async def snapshot_list(project_id: str):
     return {"snapshots": [s.model_dump() for s in snaps]}
 
 
+@app.delete("/bim/snapshots/{project_id}/{snapshot_id}")
+async def snapshot_delete(project_id: str, snapshot_id: str):
+    """Delete a specific snapshot."""
+    deleted = delete_snapshot(project_id, snapshot_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Snapshot nicht gefunden")
+    return {"message": "Snapshot gelöscht", "deleted": True}
+
+
 @app.post("/bim/compare")
 async def compare_snapshots(req: CompareRequest):
-    changes = compute_diff(req.snapshot_a, req.snapshot_b)
+    changes = compute_diff(req.snapshot_a, req.snapshot_b, req.project_id)
     return {
         "changes": [c.model_dump() for c in changes],
         "count": len(changes),
@@ -238,6 +262,44 @@ async def compare_snapshots(req: CompareRequest):
             "changed": sum(1 for c in changes if c.type == "changed"),
         },
     }
+
+
+# --- Monitoring Endpoints ---
+
+@app.get("/bim/monitoring/status")
+async def monitoring_status():
+    """Get auto-snapshot scheduler status."""
+    return scheduler.get_status().model_dump()
+
+
+@app.post("/bim/monitoring/configure")
+async def monitoring_configure(config: SchedulerConfig):
+    """Configure the auto-snapshot scheduler."""
+    if config.enabled:
+        scheduler.start(interval_minutes=config.interval_minutes)
+    else:
+        scheduler.stop()
+    return scheduler.get_status().model_dump()
+
+
+@app.get("/bim/trends/{project_id}")
+async def trends(project_id: str):
+    """Get snapshot trend data for a project."""
+    project = store.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Projekt '{project_id}' nicht gefunden")
+    trend_data = snapshot_store.get_trends(project_id)
+    return {"trends": [t.model_dump() for t in trend_data]}
+
+
+@app.get("/bim/alerts/{project_id}")
+async def alerts(project_id: str):
+    """Detect significant changes between latest snapshots."""
+    project = store.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Projekt '{project_id}' nicht gefunden")
+    alert_list = detect_alerts(project_id)
+    return {"alerts": [a.model_dump() for a in alert_list]}
 
 
 # --- Report Generation ---
