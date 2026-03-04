@@ -7,3 +7,4 @@ reportlab==4.2.*
 ifcopenshell
 python-multipart
 pyyaml
+openai

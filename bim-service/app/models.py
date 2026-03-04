@@ -217,3 +217,14 @@ class CompareRequest(BaseModel):
     project_id: str
     snapshot_a: str
     snapshot_b: str
+
+
+class ProjectReportRequest(BaseModel):
+    model: str | None = None  # override default model
+
+
+class ProjectReportResponse(BaseModel):
+    project_id: str
+    report: str  # markdown
+    model_used: str
+    sections: list[str]
