@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { Wifi, WifiOff, Plus, Upload, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Wifi, WifiOff, Plus, Upload, Loader2, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import type { Project, HealthResponse } from "@/lib/types";
-import { uploadIFC } from "@/lib/api";
+import { uploadIFC, refreshData } from "@/lib/api";
 
 interface LiveConnectionCardProps {
   health: HealthResponse | null;
@@ -11,6 +11,7 @@ interface LiveConnectionCardProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onProjectAdded: (project: Project) => void;
+  onRefresh?: () => void;
 }
 
 const SOURCE_BADGES: Record<string, { label: string; className: string }> = {
@@ -24,9 +25,11 @@ export function LiveConnectionCard({
   selectedId,
   onSelect,
   onProjectAdded,
+  onRefresh,
 }: LiveConnectionCardProps) {
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ success: boolean; message: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -98,6 +101,24 @@ export function LiveConnectionCard({
                 );
               })}
             </select>
+            {isLive && (
+              <button
+                onClick={async () => {
+                  setRefreshing(true);
+                  try {
+                    await refreshData();
+                    onRefresh?.();
+                  } finally {
+                    setRefreshing(false);
+                  }
+                }}
+                disabled={refreshing}
+                className="p-1 rounded hover:bg-gray-100 transition-colors"
+                title="Daten neu laden"
+              >
+                <RefreshCw className={`w-4 h-4 text-dcab-gray ${refreshing ? "animate-spin" : ""}`} />
+              </button>
+            )}
             <button
               onClick={() => setShowUpload(!showUpload)}
               className="p-1 rounded hover:bg-gray-100 transition-colors"

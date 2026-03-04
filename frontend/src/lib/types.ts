@@ -138,3 +138,25 @@ export interface SchedulerConfig {
   interval_minutes: number;
   enabled: boolean;
 }
+
+// LPH Progress types
+
+export interface LPHPhaseProgress {
+  lph: number;
+  label: string;
+  overall_progress: number;
+  room_properties_progress: number;
+  element_types_progress: number;
+  element_properties_progress: number;
+  room_properties_detail: Record<string, number>;
+  element_types_detail: Record<string, boolean>;
+  missing_room_properties: string[];
+  missing_element_types: string[];
+  missing_element_properties: string[];
+}
+
+export interface LPHProgressData {
+  current_phase: string;
+  phases: LPHPhaseProgress[];
+  next_steps: string[];
+}

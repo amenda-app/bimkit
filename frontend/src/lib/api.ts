@@ -2,9 +2,11 @@ import type {
   Project, Room, Area, Material, HealthResponse,
   QuantityItem, QualityReportData, CostEstimate, Snapshot, ChangeEntry,
   SnapshotTrendPoint, MonitoringAlert, SchedulerStatus, SchedulerConfig,
+  LPHProgressData,
 } from "./types";
 
-const BIM_URL = process.env.NEXT_PUBLIC_BIM_SERVICE_URL || "http://localhost:8000";
+const BIM_URL = process.env.NEXT_PUBLIC_BIM_SERVICE_URL
+  || (typeof window !== "undefined" ? `http://${window.location.hostname}:8000` : "http://localhost:8000");
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -117,6 +119,10 @@ export async function uploadIFC(file: File): Promise<{ project: Project; rooms_c
   return res.json();
 }
 
+export async function refreshData(): Promise<{ message: string; projects: Project[] }> {
+  return fetchJSON(`${BIM_URL}/bim/refresh`, { method: "POST" });
+}
+
 export async function deleteProject(projectId: string): Promise<void> {
   const res = await fetch(`${BIM_URL}/bim/projects/${projectId}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Projekt konnte nicht gelöscht werden");
@@ -146,6 +152,10 @@ export async function getTrends(projectId: string): Promise<SnapshotTrendPoint[]
 export async function getAlerts(projectId: string): Promise<MonitoringAlert[]> {
   const data = await fetchJSON<{ alerts: MonitoringAlert[] }>(`${BIM_URL}/bim/alerts/${projectId}`);
   return data.alerts;
+}
+
+export async function getLPHProgress(projectId: string): Promise<LPHProgressData> {
+  return fetchJSON(`${BIM_URL}/bim/lph-progress/${projectId}`);
 }
 
 export async function downloadPdf(projectId: string, reportType: string): Promise<void> {

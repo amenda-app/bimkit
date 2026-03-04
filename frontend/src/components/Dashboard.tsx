@@ -4,14 +4,17 @@ import { useEffect, useState, useCallback } from "react";
 import {
   Building2, LayoutGrid, Box, Loader2,
   Ruler, Euro, ShieldCheck, GitCompare, FileDown, BarChart3,
+  Layers, ListChecks,
 } from "lucide-react";
 import type {
   Project, Room, Area, Material, HealthResponse,
   QuantityItem, QualityReportData, CostEstimate, Snapshot,
+  LPHProgressData,
 } from "@/lib/types";
 import {
   getHealth, getProjects, getRooms, getAreas, getMaterials,
   getQuantities, getQualityReport, getCostEstimate, getSnapshots,
+  getLPHProgress,
 } from "@/lib/api";
 import { KPICard } from "./KPICard";
 import { LiveConnectionCard } from "./LiveConnectionCard";
@@ -24,15 +27,21 @@ import { QualityReport } from "./QualityReport";
 import { CostBreakdown } from "./CostBreakdown";
 import { MonitoringDashboard } from "./MonitoringDashboard";
 import { DIN277Summary } from "./DIN277Summary";
+import { LPHProgressCard } from "./LPHProgressCard";
+import { RoomCompletenessMatrix } from "./RoomCompletenessMatrix";
+import { AreaEfficiency } from "./AreaEfficiency";
+import { FloorOverview } from "./FloorOverview";
 
-type Tab = "overview" | "rooms" | "quantities" | "costs" | "quality" | "changes" | "reports";
+type Tab = "overview" | "rooms" | "floors" | "quantities" | "costs" | "quality" | "lph" | "changes" | "reports";
 
 const TABS: { id: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { id: "overview", label: "Übersicht", icon: BarChart3 },
   { id: "rooms", label: "Räume", icon: LayoutGrid },
+  { id: "floors", label: "Geschosse", icon: Layers },
   { id: "quantities", label: "Mengen", icon: Ruler },
   { id: "costs", label: "Kosten", icon: Euro },
   { id: "quality", label: "Qualität", icon: ShieldCheck },
+  { id: "lph", label: "LPH", icon: ListChecks },
   { id: "changes", label: "Monitoring", icon: GitCompare },
   { id: "reports", label: "Berichte", icon: FileDown },
 ];
@@ -49,6 +58,7 @@ export function Dashboard() {
   const [qualityReport, setQualityReport] = useState<QualityReportData | null>(null);
   const [costEstimate, setCostEstimate] = useState<CostEstimate | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [lphProgress, setLphProgress] = useState<LPHProgressData | null>(null);
   const [loading, setLoading] = useState(true);
   const [projectLoading, setProjectLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +85,7 @@ export function Dashboard() {
   const loadProjectData = useCallback(async (id: string) => {
     setProjectLoading(true);
     try {
-      const [roomData, areaData, matData, qtyData, qualData, costData, snapData] = await Promise.all([
+      const [roomData, areaData, matData, qtyData, qualData, costData, snapData, lphData] = await Promise.all([
         getRooms(id),
         getAreas(id),
         getMaterials(id),
@@ -83,6 +93,7 @@ export function Dashboard() {
         getQualityReport(id),
         getCostEstimate(id),
         getSnapshots(id),
+        getLPHProgress(id).catch(() => null),
       ]);
       setRooms(roomData.rooms);
       setAreas(areaData.areas);
@@ -92,6 +103,7 @@ export function Dashboard() {
       setQualityReport(qualData);
       setCostEstimate(costData);
       setSnapshots(snapData);
+      setLphProgress(lphData);
     } catch {
       setError("Fehler beim Laden der Projektdaten");
     } finally {
@@ -150,6 +162,7 @@ export function Dashboard() {
           selectedId={selectedId}
           onSelect={setSelectedId}
           onProjectAdded={handleProjectAdded}
+          onRefresh={() => { if (selectedId) loadProjectData(selectedId); }}
         />
         <KPICard
           title="Räume"
@@ -205,6 +218,13 @@ export function Dashboard() {
               {selectedProject && (
                 <DIN277Summary areas={areas} rooms={rooms} totalArea={selectedProject.total_area} />
               )}
+              {selectedProject && (
+                <AreaEfficiency
+                  areas={areas}
+                  totalArea={selectedProject.total_area}
+                  buildingType={selectedProject.building_type}
+                />
+              )}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <AreaByFloorChart areas={areas} />
                 <MaterialDistributionChart materials={materials} />
@@ -216,7 +236,16 @@ export function Dashboard() {
             </>
           )}
 
-          {activeTab === "rooms" && <RoomTable rooms={rooms} />}
+          {activeTab === "rooms" && (
+            <div className="space-y-6">
+              <RoomCompletenessMatrix rooms={rooms} />
+              <RoomTable rooms={rooms} />
+            </div>
+          )}
+
+          {activeTab === "floors" && (
+            <FloorOverview rooms={rooms} areas={areas} />
+          )}
 
           {activeTab === "quantities" && (
             <QuantityTable quantities={quantities} totalCost={totalCost} />
@@ -228,6 +257,10 @@ export function Dashboard() {
 
           {activeTab === "quality" && qualityReport && (
             <QualityReport report={qualityReport} />
+          )}
+
+          {activeTab === "lph" && lphProgress && (
+            <LPHProgressCard data={lphProgress} />
           )}
 
           {activeTab === "changes" && selectedId && (

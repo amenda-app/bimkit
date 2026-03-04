@@ -250,3 +250,25 @@ class SchedulerStatus(BaseModel):
 class SchedulerConfig(BaseModel):
     interval_minutes: int = 60
     enabled: bool = True
+
+
+# --- LPH Progress Models ---
+
+class LPHPhaseProgress(BaseModel):
+    lph: int
+    label: str
+    overall_progress: float  # 0-100
+    room_properties_progress: float  # 0-100
+    element_types_progress: float  # 0-100
+    element_properties_progress: float  # 0-100
+    room_properties_detail: dict[str, float]  # field -> % filled
+    element_types_detail: dict[str, bool]  # type -> present
+    missing_room_properties: list[str]  # fields with <100% fill
+    missing_element_types: list[str]  # types not present
+    missing_element_properties: list[str]  # props not filled
+
+
+class LPHProgressResponse(BaseModel):
+    current_phase: str  # project status
+    phases: list[LPHPhaseProgress]
+    next_steps: list[str]  # German-language "next steps" to improve

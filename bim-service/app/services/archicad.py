@@ -220,10 +220,40 @@ class ArchiCADClient:
             if status == "notAvailable" or status == "notEvaluated":
                 continue
             val = pval.get("value", "")
+            val = self._unwrap_value(val)
             if val is not None and val != "":
                 values[key] = val
 
         return values
+
+    @staticmethod
+    def _unwrap_value(val) -> str | float | None:
+        """Unwrap ArchiCAD property value from nested dict/list structures."""
+        if val is None:
+            return None
+        # {"type": "displayValue", "displayValue": "Natursteinbelag"}
+        if isinstance(val, dict):
+            if "displayValue" in val:
+                return val["displayValue"]
+            if "value" in val:
+                return val["value"]
+            return str(val)
+        # [{"enumValueId": {"type": "displayValue", "displayValue": "k. A"}}]
+        if isinstance(val, list):
+            parts = []
+            for item in val:
+                if isinstance(item, dict):
+                    evid = item.get("enumValueId", item)
+                    if isinstance(evid, dict) and "displayValue" in evid:
+                        parts.append(evid["displayValue"])
+                    elif isinstance(evid, dict) and "nonLocalizedValue" in evid:
+                        parts.append(evid["nonLocalizedValue"])
+                    else:
+                        parts.append(str(evid))
+                else:
+                    parts.append(str(item))
+            return ", ".join(parts) if parts else None
+        return val
 
     async def get_areas(self, project_id: str) -> list[Area]:
         """Derive areas from rooms."""
@@ -232,8 +262,20 @@ class ArchiCADClient:
 
     async def get_all_elements(self) -> list[dict]:
         """Get all element IDs and types in the model."""
-        result = await self._post("API.GetAllElements")
-        return result.get("elements", [])
+        element_types = ["Wall", "Slab", "Door", "Window", "Column", "Roof", "Beam", "Zone"]
+        all_elements: list[dict] = []
+        for elem_type in element_types:
+            try:
+                result = await self._post(
+                    "API.GetElementsByType",
+                    {"elementType": elem_type},
+                )
+                for elem in result.get("elements", []):
+                    elem["type"] = elem_type
+                    all_elements.append(elem)
+            except Exception as e:
+                logger.warning("Failed to get elements of type %s: %s", elem_type, e)
+        return all_elements
 
     async def get_element_details(self, element_ids: list[dict]) -> list[dict]:
         """Get element details (layer, story) for given element IDs."""

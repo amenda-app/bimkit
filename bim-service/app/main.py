@@ -30,6 +30,7 @@ from app.services.standards_checker import check_standards_compliance
 from app.services.diff_engine import create_snapshot, get_snapshots, compute_diff, delete_snapshot, detect_alerts
 from app.services.snapshot_store import snapshot_store
 from app.services.snapshot_scheduler import scheduler
+from app.services.lph_progress import compute_lph_progress
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,21 @@ app.add_middleware(
 
 # Global client - starts as mock
 _client: ArchiCADClient | MockArchiCADClient = MockArchiCADClient()
+
+
+@app.on_event("startup")
+async def _auto_connect() -> None:
+    """Try to connect to ArchiCAD automatically on startup."""
+    global _client
+    _client = await create_client("localhost", 19723)
+    if isinstance(_client, ArchiCADClient):
+        logger.info("Auto-connected to ArchiCAD on startup")
+        await _refresh_archicad_data()
+        scheduler.set_refresh_callback(_refresh_archicad_data)
+        scheduler.set_project_id("archicad-live")
+        scheduler.start(interval_minutes=60)
+    else:
+        logger.info("ArchiCAD not available on startup, running without projects")
 
 
 async def _refresh_archicad_data() -> None:
@@ -243,6 +259,27 @@ async def cost_estimate(project_id: str):
     return estimate.model_dump()
 
 
+@app.get("/bim/lph-progress/{project_id}")
+async def lph_progress(project_id: str):
+    """Get LPH progress for all phases (2-5)."""
+    project = store.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Projekt '{project_id}' nicht gefunden")
+    rooms = store.get_rooms(project_id)
+
+    # Collect element data for element type/property checks
+    elements: list = []
+    if isinstance(_client, (ArchiCADClient, MockArchiCADClient)):
+        try:
+            extra_data = await collect_quality_data(_client)
+            elements = extra_data.get("elements", [])
+        except Exception as e:
+            logger.warning("Failed to collect elements for LPH progress: %s", e)
+
+    result = compute_lph_progress(project_id, rooms, elements, current_phase=project.status)
+    return result.model_dump()
+
+
 @app.post("/bim/snapshots/create")
 async def snapshot_create(req: SnapshotRequest):
     project = store.get_project(req.project_id)
@@ -282,6 +319,16 @@ async def compare_snapshots(req: CompareRequest):
             "changed": sum(1 for c in changes if c.type == "changed"),
         },
     }
+
+
+@app.post("/bim/refresh")
+async def refresh():
+    """Re-read project data from ArchiCAD."""
+    if not isinstance(_client, ArchiCADClient):
+        raise HTTPException(status_code=400, detail="Keine Live-Verbindung zu ArchiCAD")
+    await _refresh_archicad_data()
+    projects = store.get_projects()
+    return {"message": "Daten aktualisiert", "projects": [p.model_dump() for p in projects]}
 
 
 # --- Monitoring Endpoints ---
