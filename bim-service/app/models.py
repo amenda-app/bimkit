@@ -79,18 +79,89 @@ class ChangeEntry(BaseModel):
     new_value: str | None = None
 
 
+class BimElement(BaseModel):
+    id: str
+    element_type: str  # Wall, Slab, Column, etc.
+    story: str
+    layer: str
+    classification: str  # IFC classification, empty if missing
+
+
+class BoundingBox3D(BaseModel):
+    element_id: str
+    x_min: float
+    y_min: float
+    z_min: float
+    x_max: float
+    y_max: float
+    z_max: float
+
+
+class Collision(BaseModel):
+    element1_id: str
+    element1_type: str
+    element2_id: str
+    element2_type: str
+
+
+class StoryInfo(BaseModel):
+    name: str
+    index: int
+    elevation: float
+
+
+class ZoneBoundary(BaseModel):
+    zone_id: str
+    zone_name: str
+    boundary_count: int
+
+
 class QualityIssue(BaseModel):
     severity: str  # error, warning, info
     category: str
     element_id: str
     element_name: str
     message: str
+    check_category: str = ""  # machine key for filtering
+
+
+class PhaseRequirement(BaseModel):
+    lph: int
+    label: str
+    room_properties_required: list[str]
+    room_properties_optional: list[str]
+    element_types_required: list[str]
+    element_properties_required: list[str]
+
+
+class StandardsViolation(BaseModel):
+    severity: str          # "error" | "warning"
+    rule_id: str           # e.g. "room.missing_finish_floor"
+    element_id: str
+    element_name: str
+    message: str           # German, human-readable
+
+
+class PhaseComplianceReport(BaseModel):
+    project_phase: str     # e.g. "Ausführungsplanung"
+    lph: int
+    lph_label: str         # e.g. "LPH 5 – Ausführungsplanung"
+    compliant: bool
+    compliance_score: int  # 0-100
+    violations: list[StandardsViolation]
+    violations_by_rule: dict[str, int]
+    checked_rooms: int
+    checked_elements: int
 
 
 class QualityReport(BaseModel):
     score: int  # 0-100
     issues_by_severity: dict[str, int]
     issues: list[QualityIssue]
+    issues_by_category: dict[str, int] = {}
+    checked_elements: int = 0
+    timestamp: str = ""
+    phase_compliance: PhaseComplianceReport | None = None
 
 
 class CostGroup(BaseModel):

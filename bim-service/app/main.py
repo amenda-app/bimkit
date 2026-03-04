@@ -24,6 +24,9 @@ from app.services.pdf_generator import (
     generate_pdf_raumbuch, generate_pdf_flaechen, generate_pdf_materialien, generate_pdf_mengen,
 )
 from app.services.quality_checker import run_quality_checks
+from app.services.quality_data_collector import collect_quality_data
+from app.services.standards_loader import resolve_lph_for_status, get_requirement
+from app.services.standards_checker import check_standards_compliance
 from app.services.diff_engine import create_snapshot, get_snapshots, compute_diff, delete_snapshot, detect_alerts
 from app.services.snapshot_store import snapshot_store
 from app.services.snapshot_scheduler import scheduler
@@ -210,7 +213,24 @@ async def quality_report(project_id: str):
     if not project:
         raise HTTPException(status_code=404, detail=f"Projekt '{project_id}' nicht gefunden")
     rooms = store.get_rooms(project_id)
-    report = run_quality_checks(project_id, rooms)
+
+    extra_data: dict = {}
+    if isinstance(_client, (ArchiCADClient, MockArchiCADClient)):
+        try:
+            extra_data = await collect_quality_data(_client)
+        except Exception as e:
+            logger.warning("Failed to collect enhanced quality data: %s", e)
+
+    report = run_quality_checks(project_id, rooms, **extra_data)
+
+    lph = resolve_lph_for_status(project.status)
+    if lph is not None:
+        requirement = get_requirement(lph)
+        if requirement is not None:
+            compliance = check_standards_compliance(
+                project.status, requirement, rooms, extra_data.get("elements", []))
+            report.phase_compliance = compliance
+
     return report.model_dump()
 
 

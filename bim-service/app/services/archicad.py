@@ -47,13 +47,13 @@ class ArchiCADClient:
         self._property_ids: dict[str, dict] = {}  # our key -> {"propertyId": {"guid": ...}}
         self._product_info: dict = {}
 
-    async def _post(self, command: str, parameters: dict | None = None) -> dict:
+    async def _post(self, command: str, parameters: dict | None = None, timeout: float = 10.0) -> dict:
         """Send a JSON command to ArchiCAD."""
         payload: dict = {"command": command}
         if parameters:
             payload["parameters"] = parameters
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(self.base_url, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -230,6 +230,58 @@ class ArchiCADClient:
         rooms = await self.get_rooms(project_id)
         return mock_data._areas_for_project(project_id, rooms)
 
+    async def get_all_elements(self) -> list[dict]:
+        """Get all element IDs and types in the model."""
+        result = await self._post("API.GetAllElements")
+        return result.get("elements", [])
+
+    async def get_element_details(self, element_ids: list[dict]) -> list[dict]:
+        """Get element details (layer, story) for given element IDs."""
+        result = await self._post(
+            "API.GetDetailsOfElements",
+            {"elements": element_ids},
+        )
+        return result.get("detailsOfElements", [])
+
+    async def get_classifications(self, element_ids: list[dict]) -> list[dict]:
+        """Get IFC classification per element."""
+        result = await self._post(
+            "API.GetClassificationsOfElements",
+            {"elements": element_ids},
+        )
+        return result.get("elementClassifications", [])
+
+    async def get_collisions(self, group1: list[dict], group2: list[dict]) -> list[dict]:
+        """Run clash detection between two element groups."""
+        result = await self._post(
+            "API.GetCollisions",
+            {"elements1": group1, "elements2": group2},
+            timeout=60.0,
+        )
+        return result.get("collisions", [])
+
+    async def get_3d_bounding_boxes(self, element_ids: list[dict]) -> list[dict]:
+        """Get 3D bounding boxes for elements."""
+        result = await self._post(
+            "API.Get3DBoundingBoxes",
+            {"elements": element_ids},
+            timeout=30.0,
+        )
+        return result.get("boundingBoxes3D", [])
+
+    async def get_stories(self) -> list[dict]:
+        """Get story/level definitions."""
+        result = await self._post("API.GetStories")
+        return result.get("stories", [])
+
+    async def get_zone_boundaries(self, zone_ids: list[dict]) -> list[dict]:
+        """Get zone boundary integrity data."""
+        result = await self._post(
+            "API.GetZoneBoundaries",
+            {"zones": zone_ids},
+        )
+        return result.get("zoneBoundaries", [])
+
     async def get_materials(self, project_id: str) -> list[Material]:
         """Get building materials from ArchiCAD."""
         try:
@@ -333,6 +385,130 @@ class MockArchiCADClient:
 
     async def get_materials(self, project_id: str) -> list[Material]:
         return mock_data.get_materials(project_id)
+
+    async def get_all_elements(self) -> list[dict]:
+        """Return ~50 mock elements across multiple types."""
+        elements = []
+        types_and_counts = [
+            ("Wall", 15), ("Slab", 8), ("Door", 6), ("Window", 6),
+            ("Column", 5), ("Zone", 5), ("Beam", 3), ("Roof", 2),
+        ]
+        idx = 0
+        for elem_type, count in types_and_counts:
+            for i in range(count):
+                idx += 1
+                elements.append({
+                    "elementId": {"guid": f"mock-{elem_type.lower()}-{i+1:03d}"},
+                    "type": elem_type,
+                })
+        return elements
+
+    async def get_element_details(self, element_ids: list[dict]) -> list[dict]:
+        stories = ["EG", "OG1", "OG2"]
+        details = []
+        for i, elem in enumerate(element_ids):
+            details.append({
+                "elementId": elem.get("elementId", elem),
+                "story": stories[i % len(stories)],
+                "layer": f"A-{elem.get('type', 'General')}" if i % 8 != 0 else "",
+            })
+        return details
+
+    async def get_classifications(self, element_ids: list[dict]) -> list[dict]:
+        classifications = []
+        for i, elem in enumerate(element_ids):
+            # 3 elements without classification
+            if i in (5, 18, 35):
+                classifications.append({
+                    "elementId": elem.get("elementId", elem),
+                    "classificationId": None,
+                    "classificationName": "",
+                })
+            else:
+                elem_type = elem.get("type", "BuildingElement")
+                classifications.append({
+                    "elementId": elem.get("elementId", elem),
+                    "classificationId": {"guid": f"ifc-{elem_type.lower()}"},
+                    "classificationName": f"IfcBuildingElement/{elem_type}",
+                })
+        return classifications
+
+    async def get_collisions(self, group1: list[dict], group2: list[dict]) -> list[dict]:
+        """Return 2 collision pairs."""
+        collisions = []
+        if len(group1) >= 2 and len(group2) >= 2:
+            collisions.append({
+                "element1": group1[0].get("elementId", group1[0]),
+                "element2": group2[1].get("elementId", group2[1]),
+            })
+            collisions.append({
+                "element1": group1[1].get("elementId", group1[1]),
+                "element2": group2[0].get("elementId", group2[0]),
+            })
+        return collisions
+
+    async def get_3d_bounding_boxes(self, element_ids: list[dict]) -> list[dict]:
+        boxes = []
+        for i, elem in enumerate(element_ids):
+            if i == 7:
+                # Zero-volume bounding box
+                boxes.append({
+                    "elementId": elem.get("elementId", elem),
+                    "boundingBox3D": {
+                        "xMin": 5.0, "yMin": 3.0, "zMin": 0.0,
+                        "xMax": 5.0, "yMax": 3.0, "zMax": 0.0,
+                    },
+                })
+            elif i == 3:
+                # Unreasonably large volume
+                boxes.append({
+                    "elementId": elem.get("elementId", elem),
+                    "boundingBox3D": {
+                        "xMin": 0.0, "yMin": 0.0, "zMin": 0.0,
+                        "xMax": 500.0, "yMax": 500.0, "zMax": 50.0,
+                    },
+                })
+            else:
+                boxes.append({
+                    "elementId": elem.get("elementId", elem),
+                    "boundingBox3D": {
+                        "xMin": float(i), "yMin": 0.0, "zMin": 0.0,
+                        "xMax": float(i) + 4.0, "yMax": 3.0, "zMax": 3.0,
+                    },
+                })
+        return boxes
+
+    async def get_stories(self) -> list[dict]:
+        return [
+            {"name": "EG", "index": 0, "elevation": 0.0},
+            {"name": "OG1", "index": 1, "elevation": 3.2},
+            {"name": "OG2", "index": 2, "elevation": 6.4},
+        ]
+
+    async def get_zone_boundaries(self, zone_ids: list[dict]) -> list[dict]:
+        boundaries = []
+        for i, zone in enumerate(zone_ids):
+            if i == 0:
+                # Zone with 0 boundaries
+                boundaries.append({
+                    "zoneId": zone.get("elementId", zone),
+                    "zoneName": "Lager (fehlend)",
+                    "boundaryCount": 0,
+                })
+            elif i == 1:
+                # Zone with only 2 boundaries
+                boundaries.append({
+                    "zoneId": zone.get("elementId", zone),
+                    "zoneName": "Flur (unvollständig)",
+                    "boundaryCount": 2,
+                })
+            else:
+                boundaries.append({
+                    "zoneId": zone.get("elementId", zone),
+                    "zoneName": f"Zone {i+1}",
+                    "boundaryCount": 4,
+                })
+        return boundaries
 
 
 async def create_client(host: str = "localhost", port: int = 19723) -> ArchiCADClient | MockArchiCADClient:
